@@ -1,0 +1,14 @@
+#!/bin/sh
+case "${1:-}" in
+    ''|-h|--help)
+        printf '%s\n' 'Usage: ais-env <command> [arguments...]' 'Load the shared AIS environment and local credentials, then run a command.'
+        [ "$#" -gt 0 ] && exit 0
+        exit 2
+        ;;
+esac
+if [ ! -r "$HOME/.config/ais/shell-env.sh" ]; then
+    printf '%s\n' 'Missing AIS environment loader. Run the workspace installer first.' >&2
+    exit 2
+fi
+. "$HOME/.config/ais/shell-env.sh"
+exec "$@"

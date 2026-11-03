@@ -1,0 +1,96 @@
+#!/bin/sh
+# Run the canonical local Kind Taskfile from any working directory.
+platform=${0##*/}
+case "$platform" in
+  baldur|odin|mimir|heimdall) ;;
+  iip-kind)
+    platform=${1:-}
+    case "$platform" in
+      baldur|odin|mimir|heimdall) shift ;;
+      *) printf '%s\n' 'Usage: iip-kind <baldur|odin|mimir|heimdall> <task> [Task arguments...]' >&2; exit 2 ;;
+    esac
+    ;;
+  *) printf 'Unknown platform command: %s\n' "$platform" >&2; exit 2 ;;
+esac
+
+case "${1:-}" in
+  ''|-h|--help|help)
+    printf '%s\n' \
+      "Usage: $platform <task> [Task arguments...]" \
+      '' \
+      "  $platform start" \
+      "  $platform stop" \
+      "  $platform check" \
+      "  $platform deploy:redeploy:all" \
+      "  $platform start --summary" \
+      '' \
+      "Maps to task $platform:<task> in the configured workspace's iip-tooling/iip-kind-cluster." \
+      'Workspace configuration: $HOME/.config/ais/workspace (one absolute path).' \
+      'Extra arguments (including NAME=value and Task flags) pass through unchanged.'
+    exit 0
+    ;;
+  -*|*=*) printf 'Expected a task name; run "%s --help" for usage.\n' "$platform" >&2; exit 2 ;;
+esac
+
+action=$1
+shift
+if [ ! -r "$HOME/.config/ais/shell-env.sh" ]; then
+  printf '%s\n' 'Missing AIS environment loader. Run the workspace installer first.' >&2
+  exit 2
+fi
+. "$HOME/.config/ais/shell-env.sh"
+workspace_config="$HOME/.config/ais/workspace"
+if [ ! -r "$workspace_config" ]; then
+  printf 'Missing workspace configuration: %s\nRun the AIS team installer with your absolute workspace path.\n' "$workspace_config" >&2
+  exit 2
+fi
+workspace_root=$(cat "$workspace_config") || exit 2
+case "$workspace_root" in
+  *'
+'*) printf 'Workspace configuration must contain one absolute path: %s\n' "$workspace_config" >&2; exit 2 ;;
+  /*) ;;
+  *) printf 'Workspace configuration must contain an absolute path: %s\n' "$workspace_config" >&2; exit 2 ;;
+esac
+cluster_dir="$workspace_root/iip-tooling/iip-kind-cluster"
+if [ ! -f "$cluster_dir/Taskfile.yml" ]; then
+  printf 'Kind Taskfile not found: %s/Taskfile.yml\nCheck %s.\n' "$cluster_dir" "$workspace_config" >&2
+  exit 2
+fi
+if ! command -v task >/dev/null 2>&1; then
+  printf '%s\n' 'The task executable is not on PATH. Install Go Task and make it available to this shell.' >&2
+  exit 127
+fi
+# Certificate defaults are shared with shell startup and ais-env.
+certificate_config="$HOME/.config/ais/zscaler-certificate"
+if [ -z "${ZSCALER_CERTIFICATE_PATH:-}" ] && [ -r "$certificate_config" ]; then
+  ZSCALER_CERTIFICATE_PATH=$(cat "$certificate_config") || exit 2
+  case "$ZSCALER_CERTIFICATE_PATH" in
+    *'
+'*|''|[!/]*) printf 'Invalid certificate path in %s: expected one absolute path.\n' "$certificate_config" >&2; exit 2 ;;
+  esac
+  export ZSCALER_CERTIFICATE_PATH
+fi
+# Task command-line variables take precedence over environment defaults.
+certificate_path=${ZSCALER_CERTIFICATE_PATH:-}
+for argument in "$@"; do
+  case "$argument" in
+    ZSCALER_CERTIFICATE_PATH=*) certificate_path=${argument#ZSCALER_CERTIFICATE_PATH=} ;;
+  esac
+done
+if [ -n "$certificate_path" ]; then
+  export ZSCALER_CERTIFICATE_PATH="$certificate_path"
+fi
+case "$action" in
+  start|build|build:*|deploy:redeploy:*)
+    case "$certificate_path" in
+      /*) ;;
+      *) printf '%s\n' 'Builds require an absolute ZSCALER_CERTIFICATE_PATH.' >&2; exit 2 ;;
+    esac
+    if [ ! -f "$certificate_path" ] || [ ! -r "$certificate_path" ]; then
+      printf '%s\n' 'A readable Zscaler certificate is required for builds. Set ZSCALER_CERTIFICATE_PATH or configure ~/.config/ais/zscaler-certificate.' >&2
+      exit 2
+    fi
+    ;;
+esac
+
+exec task --dir "$cluster_dir" "$platform:$action" "$@"
