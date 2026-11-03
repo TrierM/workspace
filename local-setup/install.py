@@ -77,12 +77,14 @@ def _install(workspace, home, source, environment, certificate, state):
         raise ValueError(f'Workspace is not a directory: {workspace}')
     if '\n' in str(workspace) or '\r' in str(workspace):
         raise ValueError('Workspace path must fit on one line')
-    template = source / 'AGENTS.template.md'
+    template = workspace / 'ais-greenshark/tools/workspace-setup/AGENTS.template.md'
+    custom_rules = source / 'AGENTS.local.md'
     executable_names = ('iip-kind', 'ais-env', 'aws-session', 'jwt-decode')
     environment_names = ('shell-env.sh', 'zsh-helpers.zsh')
-    for item in (template, *(source / name for name in executable_names + environment_names), source / 'credentials.example.sh'):
+    for item in (template, custom_rules, *(source / name for name in executable_names + environment_names), source / 'credentials.example.sh'):
         if not item.is_file():
             raise ValueError(f'Missing setup file: {item}')
+    instructions = template.read_text().rstrip() + '\n\n' + custom_rules.read_text().strip() + '\n'
     bin_dir = home / '.local/bin'
     config = home / '.config/ais/workspace'
     credentials_file = home / '.config/ais/credentials.sh'
@@ -123,7 +125,7 @@ def _install(workspace, home, source, environment, certificate, state):
             agent_updates.append((path, None))
         else:
             content = path.read_text()
-            if not content.strip() or content == template.read_text():
+            if not content.strip() or content == instructions:
                 agent_updates.append((path, None))
             else:
                 agent_updates.append((path, reference_content(content, target).encode()))
@@ -143,7 +145,7 @@ def _install(workspace, home, source, environment, certificate, state):
         path.parent.mkdir(parents=True, exist_ok=True)
         state.change(path, {'type':'symlink','target':str(target)}, lambda: path.symlink_to(target), backups)
 
-    write(workspace / 'AGENTS.md', template.read_bytes(), 0o644)
+    write(workspace / 'AGENTS.md', instructions.encode(), 0o644)
     write(config, (str(workspace) + '\n').encode(), 0o600)
     for name in executable_names:
         write(bin_dir / name, (source / name).read_bytes(), 0o755)

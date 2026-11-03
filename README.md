@@ -13,9 +13,10 @@ The team's setup lives in `ais-greenshark/tools/workspace-setup` and is document
 
 - The shared `install.py` looks for `~/.config/ais/local-setup/install.py`. When it exists, the shared
   entry point hands over to it, passes the workspace path and `--uninstall`, and uses its exit status.
-- This repo is the **standalone** model from the guide: `local-setup/install.py` owns the whole setup and
-  never calls the shared installer with `--shared-only`. Changes to the shared templates, such as
-  `AGENTS.template.md`, are **not** merged automatically. I reconcile them here by hand.
+- This repo owns the personal installation and its receipts. On every run, `local-setup/install.py` reads
+  the current team template from `<workspace>/ais-greenshark/tools/workspace-setup/AGENTS.template.md`
+  and appends only `local-setup/AGENTS.local.md`. It does not copy team policies into this repo.
+  Update the canonical `ais-greenshark` checkout and rerun the installer to receive shared rule changes.
 - The shared `tools/workspace-setup` currently has no copies of `aws-session`, `ais-env`, `jwt-decode`,
   `shell-env.sh` or `zsh-helpers.zsh`. They exist only here.
 - Install receipts use the `personal` namespace (`~/.config/ais/personal-install-state.json`), separate
@@ -26,7 +27,7 @@ The team's setup lives in `ais-greenshark/tools/workspace-setup` and is document
 | File | Purpose |
 |---|---|
 | `install.py`, `install_state.py` | Installer and its reversible install receipts (`--uninstall`, `--uninstall --dry-run`) |
-| `AGENTS.template.md`, `SETUP.md` | Instruction template installed into the workspace and agent config, and its setup notes |
+| `AGENTS.local.md`, `SETUP.md` | Personal-only instruction additions and setup notes; the team template is read from ais-greenshark |
 | `aws-session` | Behind `aws-dev`, `aws-staging` and `aws-prod`. Reuses a valid SSO session and logs in only when `aws sts get-caller-identity` fails. Mirrors credentials to the default profile |
 | `ais-env`, `shell-env.sh`, `zsh-helpers.zsh` | Environment loader for non-interactive shells, and the interactive shortcuts |
 | `jwt-decode`, `iip-kind` | JWT decoder and the Kind cluster entry point |
@@ -49,7 +50,8 @@ The team's setup lives in `ais-greenshark/tools/workspace-setup` and is document
 
 ## Changing it
 
-Edit the files here and re-run `python3 ~/.config/ais/local-setup/install.py`. Do not edit the deployed
+Edit `local-setup/AGENTS.local.md` for personal rules; do not edit the generated workspace `AGENTS.md`.
+Edit other personal source files here and re-run `python3 ~/.config/ais/local-setup/install.py`. Do not edit the deployed
 copies in `~/.local/bin` or `~/.config/ais`. The install receipt records their checksums, and a manual edit makes
 a later uninstall report them as modified.
 

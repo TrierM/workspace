@@ -139,7 +139,7 @@ python3 tools/workspace-setup/install.py
 
 To configure a different workspace, pass its absolute path. The previous configuration is backed up. The installer writes instructions in the new workspace and leaves the previous workspace's files intact.
 
-The repository source of the instructions is [AGENTS.template.md](../tools/workspace-setup/AGENTS.template.md). Make shared policy changes there and rerun the installer to apply them locally. Personal changes to the installed `AGENTS.md` are backed up on updates; reconcile them with the shared template if needed.
+The team instruction source is `<workspace>/ais-greenshark/tools/workspace-setup/AGENTS.template.md`. Make team policy changes in ais-greenshark and rerun this installer to apply them locally. Keep personal rules in the sibling `AGENTS.local.md`; the generated workspace `AGENTS.md` is replaced on updates.
 
 ## Check the setup
 
@@ -158,7 +158,7 @@ Missing or malformed workspace configuration, a missing Kind Taskfile, or an una
 Run the installer and command routing checks in temporary directories:
 
 ```sh
-python3 -m unittest discover -s tools/workspace-setup/tests -v
+python3 -m unittest discover -s tests -v
 ```
 
 These checks use a fake Task executable and do not start or modify the cluster.
@@ -176,4 +176,22 @@ The dry-run previews without removing installed files. The reviewed rollback res
 
 Rollback uses ~/.config/ais/personal-install-state.json and explicit verified backups from the setup session. Later edits or missing backups block uninstall; there is no force option. Do not delete the original backups while rollback is needed. The shared installer forwards --uninstall to this private installer; use the direct private command for --dry-run.
 
-This standalone snapshot owns its full template. Reconcile team policy changes when updating it. For a generic shared-base-plus-overlay approach, see docs/local-workspace-setup.md and tools/workspace-setup/local-install.example.py in ais-greenshark.
+This installer owns the generated instructions and personal tools. Team policies are read from the current shared template on every installation; only personal additions live here. For the generic shared-base-plus-overlay example, see docs/local-workspace-setup.md and tools/workspace-setup/local-install.example.py in ais-greenshark.
+
+## Shared rules and personal additions
+
+The local installer reads the current shared template from
+`<workspace>/ais-greenshark/tools/workspace-setup/AGENTS.template.md`
+and appends only the custom rules in `AGENTS.local.md` beside this installer.
+There is no active local copy of the shared template. Update the ais-greenshark
+checkout before reinstalling to receive the latest team rules.
+
+Run the shared installer normally; it delegates to this extension:
+
+```sh
+python3 tools/workspace-setup/install.py
+```
+
+The generated `<workspace>/AGENTS.md` contains the shared template followed by
+personal rules. Edit `AGENTS.local.md` for personal rules, rather than the generated
+file. Personal environment helpers and uninstall receipts remain managed locally.
