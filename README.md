@@ -53,5 +53,16 @@ Edit the files here and re-run `python3 ~/.config/ais/local-setup/install.py`. D
 copies in `~/.local/bin` or `~/.config/ais`. The install receipt records their checksums, and a manual edit makes
 a later uninstall report them as modified.
 
+## Local patch to `install_state.py`
+
+`local-setup/install_state.py` was a copy of the shared receipt helper. It is patched so that a file already holding
+the content the installer would write, for example after a hand edit, updates its receipt checksum. The
+unpatched helper returned early and left a stale checksum, so `--uninstall` reported the file as modified.
+Only files the receipt already owns are updated; untracked files are never claimed. Run the tests with:
+
+```sh
+python3 -m unittest discover -s tests -v
+```
+
 Credentials stay in `~/.config/ais/credentials.sh` and are never committed. `.gitignore` also excludes
 installer backups (`*.bak-*`), certificates and `__pycache__`.

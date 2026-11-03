@@ -83,9 +83,15 @@ class InstallState:
 
     def change(self, path, installed, apply, backups):
         current = fingerprint(path)
-        if current == installed:
-            return
         previous = self.entries.get(str(path))
+        if current == installed:
+            # Local patch: a file that already holds the desired content (for example, edited by hand to match
+            # its source) must update the receipt's checksum, or uninstall reports it as modified. Only an
+            # already-owned entry is updated; an untracked file is never claimed.
+            if previous and previous['installed'] != installed:
+                previous['installed'] = installed
+                self.save()
+            return
         backup = path.with_name(path.name + '.bak-' + str(time.time_ns())) if current is not None else None
         if backup is not None and (backup.exists() or backup.is_symlink()):
             raise ValueError(f'Backup already exists: {backup}')
