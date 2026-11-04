@@ -42,6 +42,17 @@ The parent README documents the six managed shell startup files and their loadin
 Start fresh agent sessions after installing so they load the updated instructions. The global
 Codex, Claude Code, and Copilot CLI instructions point to the generated workspace `AGENTS.md`.
 
+## AWS profile isolation
+
+Use `aws-dev <command>`, `aws-staging <command>`, or `aws-prod <command>` to choose the
+profile explicitly. Each command receives its own temporary credentials. Inherited credential
+overrides are cleared, and no helper writes credentials into the shared default profile or puts
+credential values in command-line arguments. AWS login is reused when available.
+
+For a verified legacy dependency on `[default]`, pass `--legacy-default` before the command.
+This creates a private temporary credentials file for that process and removes it afterward;
+it does not modify the machine's default profile. See the parent README for examples and limits.
+
 ## Rollback
 
 ```sh

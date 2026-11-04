@@ -6,54 +6,20 @@ case "$name" in
     aws-prod) profile=prod ;;
     aws-session)
         case "${1:-}" in
-            -h|--help) printf '%s\n' 'Usage: aws-session <dev|staging|prod> [command [arguments...]]'; exit 0 ;;
+            -h|--help|'')
+                printf '%s\n' 'Usage: aws-session <dev|staging|prod> [--legacy-default] [--] [command [arguments...]]'
+                [ "$#" -gt 0 ] && exit 0
+                exit 2
+                ;;
         esac
-        profile=${1:-}
-        case "$profile" in dev|staging|prod) shift ;; *) printf '%s\n' 'Usage: aws-session <dev|staging|prod> [command [arguments...]]' >&2; exit 2 ;; esac
+        profile=$1
+        shift
         ;;
     *) printf 'Unknown AWS helper: %s\n' "$name" >&2; exit 2 ;;
-esac
-case "${1:-}" in
-    -h|--help)
-        printf 'Usage: %s [command [arguments...]]\n' "$name"
-        printf '%s\n' 'Log in explicitly using AWS SSO, mirror credentials to default, and optionally run a command.'
-        exit 0
-        ;;
-    --) shift ;;
 esac
 if [ ! -r "$HOME/.config/ais/shell-env.sh" ]; then
     printf '%s\n' 'Missing AIS environment loader. Run the workspace installer first.' >&2
     exit 2
 fi
 . "$HOME/.config/ais/shell-env.sh"
-for tool in aws jq; do
-    if ! command -v "$tool" >/dev/null 2>&1; then
-        printf 'Required command is not on PATH: %s\n' "$tool" >&2
-        exit 127
-    fi
-done
-if aws sts get-caller-identity --profile "$profile" >/dev/null 2>&1; then
-    printf 'Reusing existing %s SSO session.\n' "$profile" >&2
-else
-    aws sso login --profile "$profile" >&2 || exit $?
-fi
-export AWS_PROFILE="$profile"
-# Preserve the existing default-profile mirroring needed by Java tools.
-if creds=$(aws configure export-credentials --profile "$profile" --format process 2>/dev/null) &&
-    access_key=$(printf '%s' "$creds" | jq -er '.AccessKeyId') &&
-    secret_key=$(printf '%s' "$creds" | jq -er '.SecretAccessKey') &&
-    session_token=$(printf '%s' "$creds" | jq -er '.SessionToken'); then
-    if aws configure set aws_access_key_id "$access_key" --profile default &&
-        aws configure set aws_secret_access_key "$secret_key" --profile default &&
-        aws configure set aws_session_token "$session_token" --profile default; then
-        printf '%s\n' 'Credentials mirrored to the default profile.' >&2
-    else
-        printf '%s\n' 'Could not mirror credentials to default; Java-based tools may fail authentication.' >&2
-    fi
-else
-    printf '%s\n' 'Could not resolve credentials for default-profile mirroring; Java-based tools may fail authentication.' >&2
-fi
-unset creds access_key secret_key session_token
-if [ "$#" -gt 0 ]; then
-    exec "$@"
-fi
+exec python3 "$HOME/.config/ais/aws-session.py" "$profile" "$@"

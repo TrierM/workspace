@@ -99,6 +99,46 @@ Interactive Zsh also loads my Node version manager and aliases. The installer ma
 
 `ais-doctor` does not sign in or deploy. It returns exit code 1 when it finds warnings. Its upstream check uses the last downloaded Git information, so update the shared checkout when you need to check against the latest team changes.
 
+## Choose an AWS environment explicitly
+
+Use the shortcut matching the environment you intend to access:
+
+```sh
+aws-dev aws sts get-caller-identity
+aws-staging ./gradlew integrationTest
+aws-prod aws s3 ls
+```
+
+Each command gets fresh temporary credentials from the selected profile. Inherited AWS credential
+overrides are cleared before resolving that profile. Credentials are passed to the command through
+its environment, never as command-line arguments. The helper does not overwrite your shared
+`[default]` profile, so agents using different environments can run independently. If sign-in or
+credential resolution fails, the requested command does not run.
+
+In interactive Zsh, running `aws-dev`, `aws-staging`, or `aws-prod` without a command verifies the
+session, clears inherited credential overrides, and selects that named profile in the current shell.
+An external executable cannot change its parent shell; agents should use the command form above.
+Exported temporary credentials last for their issued session lifetime; rerun the shortcut when a
+long-running command needs fresh credentials.
+
+### Temporary compatibility for older tools
+
+Some local tooling still explicitly requests `[default]`. For example, the current Kind secret-refresh
+script hardcodes it. Until that tooling is migrated, use an explicit compatibility option:
+
+```sh
+aws-dev --legacy-default mimir start MIMIR_SOURCE=monorepo
+```
+
+This still selects `dev` explicitly. It gives only that command a private temporary credentials file
+containing both the selected profile and `[default]`. The file has restricted permissions and is removed
+when the command ends normally or after a handled interrupt/termination. It never replaces the real
+shared credentials file. Forced termination such as SIGKILL can prevent cleanup.
+
+Prefer the regular command form. The compatibility option is for tools whose default-profile dependency
+has been verified; it is not a reason to add new default-profile dependencies. Tools that ignore the
+standard AWS environment or credentials-file setting need separate fixes.
+
 ## Keep it up to date
 
 Update both this repository and the local `ais-greenshark` checkout, then rerun:
