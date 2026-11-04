@@ -29,7 +29,8 @@ The team's setup lives in `ais-greenshark/tools/workspace-setup` and is document
 | `install.py`, `install_state.py` | Installer and its reversible install receipts (`--uninstall`, `--uninstall --dry-run`) |
 | `AGENTS.local.md`, `SETUP.md` | Personal-only instruction additions and setup notes; the team template is read from ais-greenshark |
 | `aws-session` | Behind `aws-dev`, `aws-staging` and `aws-prod`. Reuses a valid SSO session and logs in only when `aws sts get-caller-identity` fails. Mirrors credentials to the default profile |
-| `ais-env`, `shell-env.sh`, `zsh-helpers.zsh` | Environment loader for non-interactive shells, and the interactive shortcuts |
+| `ais-env`, `shell-env.sh`, `login-env.sh` | Common environment and Homebrew login initialization |
+| `zsh-interactive.zsh`, `zsh-helpers.zsh` | Interactive NVM, aliases, and AWS profile shortcuts |
 | `jwt-decode`, `iip-kind` | JWT decoder and the Kind cluster entry point |
 | `credentials.example.sh` | Template for `~/.config/ais/credentials.sh` |
 
@@ -47,6 +48,30 @@ The team's setup lives in `ais-greenshark/tools/workspace-setup` and is document
 
 3. Fill in `~/.config/ais/credentials.sh` from `credentials.example.sh`. Start fresh agent sessions
    afterwards to load the updated instructions.
+
+## Shell startup
+
+The installer preserves existing startup content and adds managed source blocks:
+
+| Startup file | Loads |
+|---|---|
+| `.zshenv` | `shell-env.sh` for every normal Zsh invocation |
+| `.zshrc` | `zsh-interactive.zsh` for interactive NVM, aliases, and AWS shortcuts |
+| `.profile` | `login-env.sh` for Homebrew initialization and the common environment |
+| `.zprofile` | `.profile` |
+| `.bash_profile` | `.profile` followed by `.bashrc` |
+| `.bashrc` | `shell-env.sh` |
+
+Zsh startup files respect `ZDOTDIR`. Non-interactive Bash does not normally read `.bashrc`;
+use `ais-env <command>` for those agent processes. The common environment owns PATH deduplication.
+NVM respects an explicitly configured `NVM_DIR` and loads only in interactive Zsh.
+Homebrew login initialization checks `HOMEBREW_PREFIX`, `/opt/homebrew`, and `/usr/local`.
+The deprecated Desktop `devops` alias is removed during migration.
+
+Edit the tracked shell fragments to change preferences; reinstall to deploy them. Known legacy
+snippets are migrated while unrelated startup content stays in place. Uninstall restores the
+recorded original files, including any original legacy settings. Credentials, certificates,
+receipts, and timestamped backups stay outside Git.
 
 ## Changing it
 

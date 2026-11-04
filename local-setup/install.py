@@ -50,9 +50,8 @@ def reference_content(content, target):
     return content + ('\n\n' if not content.endswith('\n') else '\n') + block + '\n'
 
 
-def startup_content(content, source_name, marker):
+def startup_lines(content, line, marker):
     start, end = '# ' + marker + '_START', '# ' + marker + '_END'
-    line = f'[ ! -r "$HOME/.config/ais/{source_name}" ] || . "$HOME/.config/ais/{source_name}"'
     block = start + '\n' + line + '\n' + end
     if content.count(start) != content.count(end) or content.count(start) > 1:
         raise ValueError('Malformed AIS shell startup markers')
@@ -64,6 +63,37 @@ def startup_content(content, source_name, marker):
     if line in content:
         return content
     return content + ('\n\n' if content and not content.endswith('\n') else '\n' if content else '') + block + '\n'
+
+
+def migrate_startup(name, content):
+    """Remove only the exact legacy setup snippets previously installed here."""
+    env_line = '[ ! -r "$HOME/.config/ais/shell-env.sh" ] || . "$HOME/.config/ais/shell-env.sh"'
+    profile_line = '[ ! -r "$HOME/.profile" ] || . "$HOME/.profile"'
+    bashrc_line = '[ ! -r "$HOME/.bashrc" ] || . "$HOME/.bashrc"'
+    legacy = {
+        '.zshenv': ['typeset -U path PATH\n'],
+        '.zshrc': [
+            'export NVM_DIR="$HOME/.nvm"\n'
+            '[ -s "$NVM_DIR/nvm.sh" ] && \\. "$NVM_DIR/nvm.sh"\n'
+            '[ -s "$NVM_DIR/bash_completion" ] && \\. "$NVM_DIR/bash_completion"\n',
+            "alias ll='ls -alFG'\n", "alias la='ls -AG'\n", "alias l='ls -CFG'\n",
+            "alias devops='/Users/trierm/Desktop/iip-devops-tool-darwin'\n",
+            '# AIS_HELPERS_START\n'
+            '[ ! -r "$HOME/.config/ais/zsh-helpers.zsh" ] || . "$HOME/.config/ais/zsh-helpers.zsh"\n'
+            '# AIS_HELPERS_END\n',
+        ],
+        '.profile': ['if [ -x /opt/homebrew/bin/brew ]; then\n'
+                     '    eval "$(/opt/homebrew/bin/brew shellenv)"\nfi\n', env_line + '\n'],
+        '.zprofile': [profile_line + '\n'],
+        '.bash_profile': [profile_line + '\n', bashrc_line + '\n'],
+    }
+    if name in ('.zshenv', '.bashrc') and '# AIS_ENV_START' not in content:
+        content = content.replace(env_line + '\n', '')
+    for snippet in legacy.get(name, []):
+        # Do not remove text inside a managed block on subsequent installs.
+        if snippet in content and not re.search(r'^# AIS_(?:LOGIN|PROFILE|BASH_LOGIN)_START$', content, re.M):
+            content = content.replace(snippet, '')
+    return content
 
 
 def install(workspace, home, source, environment=None, certificate=None):
@@ -80,7 +110,7 @@ def _install(workspace, home, source, environment, certificate, state):
     template = workspace / 'ais-greenshark/tools/workspace-setup/AGENTS.template.md'
     custom_rules = source / 'AGENTS.local.md'
     executable_names = ('iip-kind', 'ais-env', 'aws-session', 'jwt-decode')
-    environment_names = ('shell-env.sh', 'zsh-helpers.zsh')
+    environment_names = ('shell-env.sh', 'zsh-helpers.zsh', 'zsh-interactive.zsh', 'login-env.sh')
     for item in (template, custom_rules, *(source / name for name in executable_names + environment_names), source / 'credentials.example.sh'):
         if not item.is_file():
             raise ValueError(f'Missing setup file: {item}')
@@ -95,7 +125,18 @@ def _install(workspace, home, source, environment, certificate, state):
             raise ValueError('Certificate must be a readable file with a path on one line')
     environment = environment or {}
     zsh_dir = Path(environment['ZDOTDIR']).expanduser().resolve() if environment.get('ZDOTDIR') else home
-    startup_files = [(zsh_dir / '.zshenv', 'shell-env.sh', 'AIS_ENV'), (zsh_dir / '.zshrc', 'zsh-helpers.zsh', 'AIS_HELPERS')]
+    def ais_source(name):
+        return f'[ ! -r "$HOME/.config/ais/{name}" ] || . "$HOME/.config/ais/{name}"'
+    profile_line = '[ ! -r "$HOME/.profile" ] || . "$HOME/.profile"'
+    bashrc_line = '[ ! -r "$HOME/.bashrc" ] || . "$HOME/.bashrc"'
+    startup_files = [
+        (zsh_dir / '.zshenv', ais_source('shell-env.sh'), 'AIS_ENV'),
+        (zsh_dir / '.zshrc', ais_source('zsh-interactive.zsh'), 'AIS_INTERACTIVE'),
+        (home / '.profile', ais_source('login-env.sh'), 'AIS_LOGIN'),
+        (zsh_dir / '.zprofile', profile_line, 'AIS_PROFILE'),
+        (home / '.bash_profile', profile_line + '\n' + bashrc_line, 'AIS_BASH_LOGIN'),
+        (home / '.bashrc', ais_source('shell-env.sh'), 'AIS_ENV'),
+    ]
     destinations = [workspace / 'AGENTS.md', config, credentials_file]
     destinations += [bin_dir / name for name in executable_names + ('baldur', 'odin', 'mimir', 'heimdall', 'aws-dev', 'aws-staging', 'aws-prod')]
     destinations += [home / '.config/ais' / name for name in environment_names]
@@ -107,7 +148,7 @@ def _install(workspace, home, source, environment, certificate, state):
     for path in destinations:
         if path.is_dir():
             raise ValueError(f'Refusing to replace a directory: {path}')
-    startup_updates = [(path, startup_content(path.read_text() if path.exists() else '', name, marker).encode()) for path, name, marker in startup_files]
+    startup_updates = [(path, startup_lines(migrate_startup(path.name, path.read_text() if path.exists() else ''), lines, marker).encode()) for path, lines, marker in startup_files]
     target = workspace / 'AGENTS.md'
     previous_target = None
     if config.is_file():

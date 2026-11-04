@@ -1,197 +1,72 @@
-# Shared agent workspace setup
+# Personal AIS workspace setup
 
-Install the team's shared `AGENTS.md`, environment loader, AWS/JWT helpers, and the `baldur`, `odin`, `mimir`, and `heimdall` commands. Each developer configures one workspace root. Team policies and scripts are shared without editing personal paths into them.
-
-## Prerequisites
-
-- macOS or Linux, Python 3, and a POSIX shell.
-- An AIS workspace directory containing your repository checkouts, including `ais-greenshark` and `iip-tooling`.
-- Go Task for platform commands; AWS CLI and `jq` for AWS login helpers. The loader adds standard Homebrew tool directories to PATH when present.
-- Podman is the only supported local container runtime. Docker Engine/Desktop are legacy. The Docker CLI and Compose plugin are still required for compatibility; `docker context show` must report `podman` before local Kind operations.
-- The Kind operations skill and its runtime/build prerequisites for actual deployments.
-
-The installer does not clone repositories, install dependencies, trigger AWS login, or run cluster operations. It adds managed source blocks to `.zshenv` and `.zshrc` (under `ZDOTDIR` when set) while preserving existing startup content.
+This private installer owns personal shell preferences and helpers. Team instructions live in
+`<workspace>/ais-greenshark/tools/workspace-setup/AGENTS.template.md`; the installer reads that
+file on every run and appends only the personal rules in the sibling `AGENTS.local.md`.
+Update the canonical ais-greenshark checkout before installing to receive new team rules.
 
 ## Install
 
-From the `ais-greenshark` checkout:
+Clone ais-greenshark and the AIS repositories into your workspace. Python 3 is required to run
+the installer. Install the tools you use separately: Go Task, Podman, the compatible Docker CLI
+and Compose plugin, AWS CLI, jq, and the relevant Java/Node build tools. For cluster prerequisites,
+follow the Kind operations skill. The installer does not install packages or trigger logins.
+
+Link this repository's `local-setup` directory to `$HOME/.config/ais/local-setup`, preserving any
+existing local setup before changing the link. See the parent README for the clone/link commands.
+Then run the shared entry point, supplying your workspace on first use:
 
 ```sh
-python3 tools/workspace-setup/install.py /absolute/path/to/workspace
+python3 /absolute/path/to/ais-greenshark/tools/workspace-setup/install.py /absolute/path/to/workspace
 ```
 
-Pass the parent of the AIS repository checkouts, not the `ais-greenshark` repository itself. Quote paths that contain spaces.
-
-The installer writes:
-
-| Location | Purpose |
-|---|---|
-| `<workspace>/AGENTS.md` | Shared instructions for agents working under this workspace |
-| `$HOME/.config/ais/workspace` | Your absolute workspace path as one plain-text line |
-| `$HOME/.local/bin/iip-kind` | Dispatcher that reads the workspace configuration |
-| `$HOME/.config/ais/shell-env.sh` | Quiet environment loader shared by shells and commands |
-| `$HOME/.config/ais/credentials.sh` | Private exports, mode `600`; created as a commented example and never overwritten |
-| `$HOME/.config/ais/zsh-helpers.zsh` | Thin interactive AWS profile shortcuts |
-| `$HOME/.local/bin/ais-env` | Load the environment and execute any command |
-| `$HOME/.local/bin/aws-session`, `aws-dev`, `aws-staging`, `aws-prod` | Explicit SSO login and command-scoped AWS profiles |
-| `$HOME/.local/bin/jwt-decode` | Decode JWT headers/payloads without signature verification |
-| `$HOME/.local/bin/baldur`, `odin`, `mimir`, `heimdall` | Symlinks to the dispatcher |
-| `$HOME/.codex/AGENTS.md` | Codex user instructions linked to the shared file; an existing nonempty `AGENTS.override.md` is updated instead |
-| `$HOME/.claude/CLAUDE.md` | Claude Code user instructions linked to the shared file |
-| `$HOME/.copilot/copilot-instructions.md` | Copilot CLI user instructions linked to the shared file |
-
-Different existing files are preserved next to their original locations as `<name>.bak-<timestamp>`. Identical files are reused. Existing directories at installation destinations cause installation to stop.
-
-Ensure `$HOME/.local/bin` and Go Task's installation directory are on PATH in both terminal and agent processes. For example, add this to your shell startup configuration if needed, then restart the terminal or agent application:
+It delegates to this extension. Subsequent direct runs can reuse the configured workspace:
 
 ```sh
-export PATH="$HOME/.local/bin:$PATH"
+python3 ~/.config/ais/local-setup/install.py
 ```
 
-The user instruction links also make the shared guidance available when a local agent starts in a worktree outside the workspace. Tool-specific loading rules still apply; verify the loaded instructions as described below.
+Edit `AGENTS.local.md` for personal agent rules and the tracked shell fragments for shell
+preferences. Do not edit generated workspace instructions or deployed helper files.
+The parent README documents the six managed shell startup files and their loading order.
 
-## Configure credentials and the certificate
+## Machine-local configuration
 
-Populate `$HOME/.config/ais/credentials.sh` locally with the exports your tools require. The installed commented example shows the format. To keep an explicitly supplied environment value, use a default:
+- `~/.config/ais/workspace`: one absolute workspace path, written by the installer.
+- `~/.config/ais/credentials.sh`: private exports, mode 600. A commented example is created
+  if missing; an existing file is preserved. Never commit this file or put credentials in agent rules.
+- `~/.config/ais/zscaler-certificate`: certificate path. Configure it with
+  `python3 ~/.config/ais/local-setup/install.py --zscaler-certificate /absolute/path/to/certificate.crt`.
+  Neither the certificate nor this machine-specific setting belongs in Git.
 
-```sh
-if [ -z "${ARTIFACTORY_USERNAME+x}" ]; then
-    export ARTIFACTORY_USERNAME='your-user'
-fi
-```
+Start fresh agent sessions after installing so they load the updated instructions. The global
+Codex, Claude Code, and Copilot CLI instructions point to the generated workspace `AGENTS.md`.
 
-Move existing literal credential exports from interactive shell configuration into this private file when needed. The installer does not extract credentials from arbitrary shell scripts. It never replaces an existing `credentials.sh` and enforces mode `600` on a regular credential file. A user-managed symlink is retained without modifying its target's permissions.
-
-To save your certificate path, pass the optional installer setting once:
-
-```sh
-python3 tools/workspace-setup/install.py --zscaler-certificate /absolute/path/to/zscaler-root-ca.crt
-```
-
-The path is stored in `$HOME/.config/ais/zscaler-certificate`. Builds require a readable certificate. Ordinary status/stop commands do not. Precedence is Task command-line `ZSCALER_CERTIFICATE_PATH=...`, then the environment variable, then this config file. Certificate values are exported consistently to child build processes.
-
-## Run tools without an interactive shell
-
-Zsh loads the shared environment through `.zshenv`. Other shells and direct process launches can use:
-
-```sh
-ais-env ./gradlew build
-aws-dev ./gradlew build
-aws-prod aws sts get-caller-identity
-jwt-decode '<token>'
-```
-
-`ais-env` loads private exports and common tool paths, then replaces itself with the supplied command, forwarding arguments and exit status. It does not load NVM or other interactive shell plugins. Add any extra tool locations you require through your private environment configuration.
-
-AWS helpers explicitly perform SSO login, mirror resolved credentials to the default profile for existing Java tooling, and optionally execute a command under the selected `AWS_PROFILE`. They do not log in during shell startup. Login/mirroring messages go to stderr; stdout belongs to the supplied command. Mirroring failures are reported but retain the existing behavior of allowing the selected-profile command to proceed.
-
-In interactive Zsh, `aws-dev`, `aws-staging`, or `aws-prod` without arguments also select the profile in the current shell. When passed a command, they leave the parent shell's profile unchanged. Bash and direct agent invocations should supply the command because executable programs cannot change the parent environment.
-
-`jwt-decode` accepts a token argument or stdin, supports Base64URL padding, and outputs a JSON array containing the header and payload. Decoding does not verify a signature.
-
-## Connect existing agent instructions
-
-The installer checks the user instruction locations above. It honors `CODEX_HOME`, `CLAUDE_CONFIG_DIR`, and `COPILOT_HOME` when those variables are set in the installation process. Run updates with the same environment used to launch your agents.
-
-- Missing or empty instruction files become symlinks to `<workspace>/AGENTS.md`.
-- Existing symlinks to the shared file are reused. If the configured workspace changes through the installer, links pointing to the previous configured workspace are retargeted, with backups.
-- A file containing personal instructions keeps that text and receives one managed `AIS_WORKSPACE_START` / `AIS_WORKSPACE_END` block. The block instructs the agent to read and follow the shared file before AIS work. Reinstalling updates that reference without duplicating it. This is an explicit instruction to read the file, not a native import mechanism.
-- A symlink to a separate personal instruction file is backed up as a symlink. Its content is preserved in the active instruction file with the managed reference; the original target is not edited.
-- Codex loads a nonempty global `AGENTS.override.md` ahead of `AGENTS.md`. The installer updates that override when present so the reference is in the file Codex actually reads.
-
-Repository-specific instructions and IDE settings are not modified. This setup connects the local user instruction files used by Codex, Claude Code, and Copilot CLI. It does not configure remote/cloud agents or discover custom IDE profile files.
-
-Start fresh agent sessions after installation. Ask Codex to list its instruction sources, use Claude Code's `/memory`, and use Copilot CLI's `/instructions` to inspect what each tool loaded. A filesystem link verifies the setup; it does not prove that an already-running session reloaded it.
-
-Instruction-location references: [Codex](https://learn.chatgpt.com/docs/agent-configuration/agents-md), [Claude Code](https://code.claude.com/docs/en/memory), [Copilot CLI](https://docs.github.com/en/copilot/how-tos/copilot-cli/customize-copilot/add-custom-instructions).
-
-## Use
-
-Commands work from any directory and preserve the caller's working directory:
-
-```sh
-baldur --help
-odin start --summary
-baldur deploy:redeploy:data-fetcher
-heimdall deploy:redeploy:manager
-mimir deploy:redeploy:manager MIMIR_SOURCE=monorepo
-```
-
-The last three examples rebuild and redeploy the named service. Follow the Kind operations skill before running deployment commands.
-
-To select a Mimir worktree, pass the source switch and checkout together on each applicable command:
-
-```sh
-mimir deploy:redeploy:manager MIMIR_SOURCE=monorepo MIMIR_SOURCE_DIR=/absolute/path/to/iip-mimir-worktree
-```
-
-Baldur and Heimdall use `BALDUR_SOURCE_DIR` and `HEIMDALL_SOURCE_DIR`. Odin tasks use canonical sibling service checkouts.
-
-The dispatcher maps `<platform> <task> [arguments...]` to the platform's Task namespace in `<workspace>/iip-tooling/iip-kind-cluster`. Additional arguments and Task exit codes are forwarded. The workspace configuration is read as data, never sourced or evaluated as shell code.
-
-## Update or change workspace
-
-After updating your `ais-greenshark` checkout, rerun the installer without an argument to reuse your configured workspace:
-
-```sh
-python3 tools/workspace-setup/install.py
-```
-
-To configure a different workspace, pass its absolute path. The previous configuration is backed up. The installer writes instructions in the new workspace and leaves the previous workspace's files intact.
-
-The team instruction source is `<workspace>/ais-greenshark/tools/workspace-setup/AGENTS.template.md`. Make team policy changes in ais-greenshark and rerun this installer to apply them locally. Keep personal rules in the sibling `AGENTS.local.md`; the generated workspace `AGENTS.md` is replaced on updates.
-
-## Check the setup
-
-Read-only checks:
-
-```sh
-command -v baldur
-command -v task
-baldur --help
-odin start --summary
-mimir deploy:redeploy:manager MIMIR_SOURCE=monorepo --summary
-```
-
-Missing or malformed workspace configuration, a missing Kind Taskfile, or an unavailable Task executable produces an error before task execution.
-
-Run the installer and command routing checks in temporary directories:
-
-```sh
-python3 -m unittest discover -s tests -v
-```
-
-These checks use a fake Task executable and do not start or modify the cluster.
-
-## Personal rollback
-
-The private installer now supports:
+## Rollback
 
 ```sh
 python3 ~/.config/ais/local-setup/install.py --uninstall --dry-run
 python3 ~/.config/ais/local-setup/install.py --uninstall
 ```
 
-The dry-run previews without removing installed files. The reviewed rollback restores the four pre-personal-helper files (workspace AGENTS.md, iip-kind, shell-env.sh, and .zshrc) and removes the seven personal executable/helper files created during this setup. Existing shared platform shortcuts and agent links remain. Credentials, the certificate, local installer sources, and the earlier shell cleanup remain local.
+The personal receipt records original files and installed checksums. Uninstall restores recorded
+originals and removes recorded new files; later edits or missing backups stop it without forcing
+removal. The restored originals may contain settings removed during migration. Existing machine
+installations can have older, explicitly reviewed baselines. Use the dry-run to see the actual plan.
 
-Rollback uses ~/.config/ais/personal-install-state.json and explicit verified backups from the setup session. Later edits or missing backups block uninstall; there is no force option. Do not delete the original backups while rollback is needed. The shared installer forwards --uninstall to this private installer; use the direct private command for --dry-run.
+Credentials, certificate files, and installer sources are retained. Keep original backups until
+rollback is no longer needed. Receipts and backups stay local and are not portable machine setup.
+The shared entry point forwards `--uninstall`; use the direct private command for `--dry-run`.
 
-This installer owns the generated instructions and personal tools. Team policies are read from the current shared template on every installation; only personal additions live here. For the generic shared-base-plus-overlay example, see docs/local-workspace-setup.md and tools/workspace-setup/local-install.example.py in ais-greenshark.
+## Validate
 
-## Shared rules and personal additions
-
-The local installer reads the current shared template from
-`<workspace>/ais-greenshark/tools/workspace-setup/AGENTS.template.md`
-and appends only the custom rules in `AGENTS.local.md` beside this installer.
-There is no active local copy of the shared template. Update the ais-greenshark
-checkout before reinstalling to receive the latest team rules.
-
-Run the shared installer normally; it delegates to this extension:
+From the private workspace repository:
 
 ```sh
-python3 tools/workspace-setup/install.py
+python3 -m unittest discover -s tests -v
 ```
 
-The generated `<workspace>/AGENTS.md` contains the shared template followed by
-personal rules. Edit `AGENTS.local.md` for personal rules, rather than the generated
-file. Personal environment helpers and uninstall receipts remain managed locally.
+Tests use temporary homes and workspaces. They check shared/personal instruction composition,
+shell startup, legacy migration, and rollback without using real credentials or performing logins
+or deployments. On a real machine, verify quiet startup and command availability; use `ais-env`
+for directly launched tools or non-interactive Bash/sh sessions.
