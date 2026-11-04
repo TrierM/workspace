@@ -57,6 +57,31 @@ It detects this personal installer and follows the steps above. Fill in your pri
 
 Installation does not sign in to AWS or deploy services.
 
+## How the link keeps maintenance simple
+
+A symlink is a shortcut to a folder. On this machine, the connection is:
+
+```text
+~/.config/ais/local-setup  →  ~/Projects/workspace/local-setup
+```
+
+Both paths open the same source files. Editing through either path changes the files in this Git checkout, where they can be reviewed, committed, and pushed. There is no second installer folder to keep in sync. Keep the checkout in place; moving it means updating the link.
+
+Pulling this repository brings down the latest installer, personal rules, and shell fragments. **Rerun the installer afterward:** the working commands and shell settings are installed copies, and the workspace `AGENTS.md` is generated. They are refreshed during installation rather than being linked directly to every source file.
+
+For a routine update on this machine:
+
+```sh
+git -C "$HOME/Projects/workspace" pull --ff-only
+# Also update your local ais-greenshark checkout to receive the latest team rules.
+python3 "$HOME/.config/ais/local-setup/install.py"
+ais-doctor
+```
+
+Review any local Git changes before pulling. After changing startup settings or agent instructions, start fresh terminal and agent sessions.
+
+On another machine, clone this repository, create the same link to that machine's checkout, and run the installer with its own workspace path. Git synchronizes the setup sources; credentials, certificates, and rollback records remain local to each machine.
+
 ## Everyday use
 
 | Command | What it does |
