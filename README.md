@@ -31,6 +31,7 @@ The team's setup lives in `ais-greenshark/tools/workspace-setup` and is document
 | `aws-session` | Behind `aws-dev`, `aws-staging` and `aws-prod`. Reuses a valid SSO session and logs in only when `aws sts get-caller-identity` fails. Mirrors credentials to the default profile |
 | `ais-env`, `shell-env.sh`, `login-env.sh` | Common environment and Homebrew login initialization |
 | `zsh-interactive.zsh`, `zsh-helpers.zsh` | Interactive NVM, aliases, and AWS profile shortcuts |
+| `ais-doctor`, `doctor.py` | Local environment diagnostics, installed versions, and JSON output for agents |
 | `jwt-decode`, `iip-kind` | JWT decoder and the Kind cluster entry point |
 | `credentials.example.sh` | Template for `~/.config/ais/credentials.sh` |
 
@@ -72,6 +73,27 @@ Edit the tracked shell fragments to change preferences; reinstall to deploy them
 snippets are migrated while unrelated startup content stays in place. Uninstall restores the
 recorded original files, including any original legacy settings. Credentials, certificates,
 receipts, and timestamped backups stay outside Git.
+
+## Diagnose the agent environment
+
+```sh
+ais-doctor
+ais-doctor --json
+```
+
+The doctor loads the same environment as `ais-env`, then reports installed tool versions,
+workspace and instruction setup, credential file permissions, certificate expiry, Docker context,
+and Podman machine state. It runs no logins, deployments, package installations, or Git fetches.
+The tool version commands and runtime inspection each have a five-second timeout. Normal tool
+version commands may perform their own local cache initialization. Credential values are not
+inspected or printed. JSON output uses `check`, `status`, and `message` for each diagnostic.
+
+Exit code 0 means all checks passed; 1 means warnings need attention. Missing tools are warnings,
+so the report remains useful on a machine that only needs a subset of the platform tools.
+Instruction freshness compares with your current shared checkout; upstream comparison uses cached
+`origin/main`. Fetch/update ais-greenshark explicitly when you want current upstream information.
+No manually maintained list of installed tool versions is needed. `/opt/podman/bin` is included
+when it exists, so Podman is available in clean non-interactive agent shells.
 
 ## Changing it
 

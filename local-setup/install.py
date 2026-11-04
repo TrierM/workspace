@@ -109,8 +109,8 @@ def _install(workspace, home, source, environment, certificate, state):
         raise ValueError('Workspace path must fit on one line')
     template = workspace / 'ais-greenshark/tools/workspace-setup/AGENTS.template.md'
     custom_rules = source / 'AGENTS.local.md'
-    executable_names = ('iip-kind', 'ais-env', 'aws-session', 'jwt-decode')
-    environment_names = ('shell-env.sh', 'zsh-helpers.zsh', 'zsh-interactive.zsh', 'login-env.sh')
+    executable_names = ('iip-kind', 'ais-env', 'ais-doctor', 'aws-session', 'jwt-decode')
+    environment_names = ('shell-env.sh', 'zsh-helpers.zsh', 'zsh-interactive.zsh', 'login-env.sh', 'doctor.py')
     for item in (template, custom_rules, *(source / name for name in executable_names + environment_names), source / 'credentials.example.sh'):
         if not item.is_file():
             raise ValueError(f'Missing setup file: {item}')

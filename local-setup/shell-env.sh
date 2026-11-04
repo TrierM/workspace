@@ -62,6 +62,8 @@ fi
 [ -z "${GRADLE_HOME:-}" ] || _ais_prepend_path "$GRADLE_HOME/bin"
 [ -z "${MAVEN_HOME:-}" ] || _ais_prepend_path "$MAVEN_HOME/bin"
 [ -z "${JAVA_HOME:-}" ] || _ais_prepend_path "$JAVA_HOME/bin"
+# Podman Desktop installs its CLI outside the Homebrew prefix.
+_ais_prepend_path /opt/podman/bin
 _ais_prepend_path "$HOME/bin"
 _ais_prepend_path "$HOME/.local/bin"
 if [ -n "$_ais_brew_prefix" ]; then

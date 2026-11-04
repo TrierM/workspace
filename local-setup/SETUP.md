@@ -68,5 +68,7 @@ python3 -m unittest discover -s tests -v
 
 Tests use temporary homes and workspaces. They check shared/personal instruction composition,
 shell startup, legacy migration, and rollback without using real credentials or performing logins
-or deployments. On a real machine, verify quiet startup and command availability; use `ais-env`
+or deployments. On a real machine, run `ais-doctor` or `ais-doctor --json` to inspect tools, versions, instructions,
+certificate expiry, permissions, and Podman setup without logins or deployments. It exits 1 for
+warnings and compares upstream using cached Git refs. Verify quiet startup; use `ais-env`
 for directly launched tools or non-interactive Bash/sh sessions.
