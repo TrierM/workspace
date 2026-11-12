@@ -1,0 +1,7 @@
+#!/bin/sh
+if [ ! -r "$HOME/.config/ais/shell-env.sh" ]; then
+    printf '%s\n' 'Missing AIS environment loader. Run the workspace installer first.' >&2
+    exit 2
+fi
+. "$HOME/.config/ais/shell-env.sh"
+exec python3 "$HOME/.config/ais/codegraph_update.py" "$@"

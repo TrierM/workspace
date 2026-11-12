@@ -7,6 +7,7 @@ import tempfile
 import unittest
 
 SOURCE = Path(__file__).resolve().parents[1] / 'local-setup'
+sys.path.insert(0, str(SOURCE))
 spec = importlib.util.spec_from_file_location('doctor', SOURCE / 'doctor.py')
 doctor = importlib.util.module_from_spec(spec)
 spec.loader.exec_module(doctor)
@@ -37,6 +38,14 @@ esac
             tool = self.bin / name
             tool.write_text(script)
             tool.chmod(0o755)
+        bundle = self.home / '.codegraph/versions/v1.6.2'
+        (bundle / 'bin').mkdir(parents=True)
+        (bundle / 'bin/codegraph').write_text(script)
+        (bundle / 'bin/codegraph').chmod(0o755)
+        (bundle / 'node').write_text("#!/bin/sh\nprintf 'v24.22.2\\n'\n")
+        (bundle / 'node').chmod(0o755)
+        (self.bin / 'codegraph').unlink()
+        (self.bin / 'codegraph').symlink_to(bundle / 'bin/codegraph')
         # The fake tools use only shell builtins; no ambient credentials or services.
         self.env = {'HOME': str(self.home), 'PATH': str(self.bin)}
         config = self.home / '.config/ais'
@@ -83,6 +92,14 @@ esac
         for name in ('node', 'Docker context', 'certificate validity', 'credentials permissions', 'instructions'):
             self.assertEqual(checks[name]['status'], 'warning', name)
         self.assertNotIn('SECRET_SENTINEL', json.dumps(checks))
+
+    def test_unapproved_bundled_node_warns_even_when_path_node_works(self):
+        node = self.home / '.codegraph/versions/v1.6.2/node'
+        node.write_text("#!/bin/sh\nprintf 'v24.16.0\\n'\n")
+        checks = {item['check']: item for item in doctor.collect(self.home, self.env)}
+        self.assertEqual(checks['node']['status'], 'ok')
+        self.assertEqual(checks['CodeGraph bundled Node']['status'], 'warning')
+        self.assertIn('24.16.0', checks['CodeGraph bundled Node']['message'])
 
     def test_cli_json_and_exit_status(self):
         result = subprocess.run([sys.executable, str(SOURCE / 'doctor.py'), '--json'],

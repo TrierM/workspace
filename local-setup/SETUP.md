@@ -83,3 +83,26 @@ or deployments. On a real machine, run `ais-doctor` or `ais-doctor --json` to in
 certificate expiry, permissions, and Podman setup without logins or deployments. It exits 1 for
 warnings and compares upstream using cached Git refs. Verify quiet startup; use `ais-env`
 for directly launched tools or non-interactive Bash/sh sessions.
+
+## CodeGraph updates
+
+Keep one standalone CodeGraph installation. Use the AIS command instead of a direct
+`codegraph upgrade` so a release cannot silently restore an unapproved bundled Node:
+
+```sh
+ais-codegraph-update --check  # installed runtime only; no network or changes
+ais-codegraph-update          # download, validate, then activate the latest release
+```
+
+The updater runs CodeGraph's official installer in a temporary directory, checks its bundled
+Node against the Elsevier minimums (24.22.1 or later in 24.x, or 26.12.1 or later in 26.x),
+then checks that the candidate CLI starts. A rejected download is deleted and the current
+installation is preserved. Activation errors restore the previous launcher links. Successful
+updates remove the previous bundle; restart coding-agent apps to unload its running processes.
+`ais-doctor` also reports the bundled runtime separately from the Node selected by PATH.
+
+CodeGraph 1.6.2 ships Node 24.16.0; the current Mac installation has a local 24.22.2 runtime
+replacement. Until upstream publishes an approved bundle, the guarded updater will reject
+that download and keep the patched installation. The upstream fix is tracked in
+[CodeGraph #2959](https://github.com/colbymchenry/codegraph/issues/2959).
+The check enforces the stated version policy; it is not a full vulnerability scan.

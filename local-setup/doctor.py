@@ -7,6 +7,8 @@ from pathlib import Path
 import shutil
 import subprocess
 
+from codegraph_update import bundle_for_launcher, inspect_bundle
+
 
 TOOLS = {
     'git': ['--version'], 'gh': ['--version'], 'python3': ['--version'],
@@ -57,6 +59,13 @@ def collect(home, environment, timeout=5):
     for name in ('ais-env', 'baldur', 'odin', 'mimir', 'heimdall'):
         executable = shutil.which(name, path=environment.get('PATH', ''))
         record(name, executable is not None, 'Available' if executable else 'Missing from this process PATH')
+
+    if 'codegraph' in executables:
+        try:
+            ok, message = inspect_bundle(bundle_for_launcher(executables['codegraph']), environment, timeout)
+        except (OSError, ValueError) as error:
+            ok, message = False, str(error)
+        record('CodeGraph bundled Node', ok, message)
 
     workspace = None
     try:
