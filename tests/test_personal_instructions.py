@@ -6,6 +6,8 @@ import sys
 import tempfile
 import unittest
 
+import shared_setup
+
 SOURCE = Path(__file__).resolve().parents[1] / 'local-setup'
 
 
@@ -20,9 +22,7 @@ class PersonalInstructionsTest(unittest.TestCase):
             source = root / 'local sources'
             shutil.copytree(SOURCE, source, ignore=shutil.ignore_patterns('*.bak-*', '__pycache__'))
             self.assertFalse((source / 'AGENTS.template.md').exists())
-            shared = workspace / 'ais-greenshark/tools/workspace-setup/AGENTS.template.md'
-            shared.parent.mkdir(parents=True)
-            shared.write_text('# Team instructions\nFirst shared rule.\n')
+            shared = shared_setup.install_shared_setup(workspace, '# Team instructions\nFirst shared rule.\n')
             personal = source / 'AGENTS.local.md'
             personal.write_text('## Personal additions\nFirst personal rule.\n')
             agents = workspace / 'AGENTS.md'
@@ -41,16 +41,25 @@ class PersonalInstructionsTest(unittest.TestCase):
                     self.assertNotEqual(result.returncode, 0)
                 return result
 
+            def instructions():
+                # The shared installer stamps a generated header; the personal rules follow the team template.
+                text = agents.read_text()
+                self.assertTrue(text.startswith('<!-- AIS_GENERATED'))
+                return text[text.index('-->\n') + len('-->\n'):].lstrip('\n')
+
             for _ in range(2):
                 run()
-                self.assertEqual(agents.read_text(), shared.read_text().rstrip() +
+                self.assertEqual(instructions(), shared.read_text().rstrip() +
                                  '\n\n' + personal.read_text().strip() + '\n')
             shared.write_text('# Team instructions\nUpdated shared rule.\n')
             personal.write_text('## Personal additions\nUpdated personal rule.\n')
             run()
-            self.assertEqual(agents.read_text().count('Updated shared rule.'), 1)
-            self.assertEqual(agents.read_text().count('Updated personal rule.'), 1)
-            self.assertNotIn('First shared rule.', agents.read_text())
+            self.assertEqual(instructions().count('Updated shared rule.'), 1)
+            self.assertEqual(instructions().count('Updated personal rule.'), 1)
+            self.assertNotIn('First shared rule.', instructions())
+            # The Kind wrapper is the shared installer's own file, not a personal copy.
+            self.assertEqual((home / '.local/bin/iip-kind').read_bytes(),
+                             (workspace / 'ais-greenshark/tools/workspace-setup/iip-kind').read_bytes())
             for name in ('.codex/AGENTS.md', '.claude/CLAUDE.md', '.copilot/copilot-instructions.md'):
                 self.assertEqual((home / name).resolve(), agents)
             before = agents.read_bytes()

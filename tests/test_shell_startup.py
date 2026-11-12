@@ -5,6 +5,8 @@ import sys
 import tempfile
 import unittest
 
+import shared_setup
+
 SOURCE = Path(__file__).resolve().parents[1] / 'local-setup'
 
 
@@ -16,9 +18,7 @@ class ShellStartupTest(unittest.TestCase):
         self.home = self.root / 'home with spaces'
         self.home.mkdir()
         self.workspace = self.root / 'workspace'
-        shared = self.workspace / 'ais-greenshark/tools/workspace-setup/AGENTS.template.md'
-        shared.parent.mkdir(parents=True)
-        shared.write_text('# Team rules\n')
+        shared_setup.install_shared_setup(self.workspace, '# Team rules\n')
         self.env = {'HOME': str(self.home), 'PATH': '/usr/bin:/bin:/usr/bin', 'TERM': 'dumb'}
         self.command = [sys.executable, str(SOURCE / 'install.py'), str(self.workspace)]
 

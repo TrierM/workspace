@@ -1,16 +1,20 @@
 #!/usr/bin/env python3
-"""Install AIS workspace instructions and platform commands for the current user."""
+"""Install the personal AIS setup on top of the shared team installer.
+
+The shared installer in ais-greenshark owns the team instructions (with the personal rules appended), the Kind
+commands and the agent instruction files. This installer runs it first, so those files never drift from the checkout,
+and then installs only what is personal: helpers, the shell environment, credentials and shell startup.
+"""
 import argparse
+import hashlib
+import importlib.util
 import os
 import re
+import subprocess
+import sys
 from pathlib import Path
-import hashlib
 
-from install_state import InstallState
-
-
-REFERENCE_START = '<!-- AIS_WORKSPACE_START -->'
-REFERENCE_END = '<!-- AIS_WORKSPACE_END -->'
+SHARED_INSTALLER = Path('ais-greenshark/tools/workspace-setup/install.py')
 
 
 def instruction_paths(home, environment=None):
@@ -28,26 +32,6 @@ def instruction_paths(home, environment=None):
         'Claude Code': directory('CLAUDE_CONFIG_DIR', '.claude') / 'CLAUDE.md',
         'Copilot CLI': directory('COPILOT_HOME', '.copilot') / 'copilot-instructions.md',
     }
-
-
-def reference_content(content, target):
-    start_count = content.count(REFERENCE_START)
-    end_count = content.count(REFERENCE_END)
-    if start_count != end_count or start_count > 1:
-        raise ValueError('Malformed AIS workspace reference markers; preserve and repair the instruction file first')
-    block = (
-        REFERENCE_START + '\n## AIS workspace instructions\n\n'
-        'Before working on AIS repositories or their worktrees, read and follow the shared '
-        f'instructions at `{target}`. Read `$HOME/.config/ais/workspace` to resolve the configured '
-        'workspace root. The shared file is the source of team policies; keep personal instructions '
-        'outside this managed block.\n' + REFERENCE_END
-    )
-    if start_count:
-        pattern = re.escape(REFERENCE_START) + r'.*?' + re.escape(REFERENCE_END)
-        if not re.search(pattern, content, re.DOTALL):
-            raise ValueError('AIS workspace reference markers are out of order')
-        return re.sub(pattern, lambda match: block, content, count=1, flags=re.DOTALL)
-    return content + ('\n\n' if not content.endswith('\n') else '\n') + block + '\n'
 
 
 def startup_lines(content, line, marker):
@@ -96,27 +80,68 @@ def migrate_startup(name, content):
     return content
 
 
+def shared_installer(workspace):
+    installer = workspace / SHARED_INSTALLER
+    if not installer.is_file():
+        raise ValueError(f'Shared installer missing: {installer}; update the canonical ais-greenshark checkout')
+    return installer
+
+
+def load_install_state(workspace):
+    """Use the shared checkout's receipt module so the two installers cannot disagree about the receipt format."""
+    module_path = shared_installer(workspace).with_name('install_state.py')
+    spec = importlib.util.spec_from_file_location('ais_shared_install_state', module_path)
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+    return module.InstallState
+
+
+def run_shared(workspace, source, uninstall=False):
+    """Run the shared installer without its local-installer delegation. Returns its exit status."""
+    command = [sys.executable, str(shared_installer(workspace)), str(workspace), '--shared-only']
+    if uninstall:
+        return subprocess.run(command + ['--uninstall']).returncode
+    rules = source / 'AGENTS.local.md'
+    if rules.is_file() and rules.read_text().strip():
+        command += ['--local-rules', str(rules)]
+    return subprocess.run(command).returncode
+
+
+def release_shared_files(state, workspace, home, environment):
+    """Forget receipt entries for files the shared installer owns now.
+
+    Earlier versions of this installer wrote them. The files stay as they are; only the ownership record moves, so
+    a personal uninstall does not report them as modified.
+    """
+    bin_dir = home / '.local/bin'
+    owned = [workspace / 'AGENTS.md', home / '.config/ais/workspace', bin_dir / 'iip-kind']
+    owned += [bin_dir / name for name in ('baldur', 'odin', 'mimir', 'heimdall')]
+    owned += list(instruction_paths(home, environment).values())
+    released = [str(path) for path in owned if str(path) in state.entries]
+    for name in released:
+        del state.entries[name]
+    if released:
+        state.save()
+
+
 def install(workspace, home, source, environment=None, certificate=None):
+    workspace = workspace.expanduser().resolve(strict=True)
+    InstallState = load_install_state(workspace)
     with InstallState(home, namespace='personal') as state:
         return _install(workspace, home, source, environment, certificate, state)
 
 
 def _install(workspace, home, source, environment, certificate, state):
-    workspace = workspace.expanduser().resolve(strict=True)
     if not workspace.is_dir():
         raise ValueError(f'Workspace is not a directory: {workspace}')
     if '\n' in str(workspace) or '\r' in str(workspace):
         raise ValueError('Workspace path must fit on one line')
-    template = workspace / 'ais-greenshark/tools/workspace-setup/AGENTS.template.md'
-    custom_rules = source / 'AGENTS.local.md'
-    executable_names = ('iip-kind', 'ais-env', 'ais-doctor', 'aws-session', 'jwt-decode')
-    environment_names = ('shell-env.sh', 'zsh-helpers.zsh', 'zsh-interactive.zsh', 'login-env.sh', 'doctor.py', 'aws-session.py')
-    for item in (template, custom_rules, *(source / name for name in executable_names + environment_names), source / 'credentials.example.sh'):
+    executable_names = ('ais-env', 'ais-doctor', 'ais-codegraph-update', 'aws-session', 'jwt-decode')
+    environment_names = ('shell-env.sh', 'zsh-helpers.zsh', 'zsh-interactive.zsh', 'login-env.sh', 'doctor.py', 'codegraph_update.py', 'aws-session.py')
+    for item in (*(source / name for name in executable_names + environment_names), source / 'credentials.example.sh'):
         if not item.is_file():
             raise ValueError(f'Missing setup file: {item}')
-    instructions = template.read_text().rstrip() + '\n\n' + custom_rules.read_text().strip() + '\n'
     bin_dir = home / '.local/bin'
-    config = home / '.config/ais/workspace'
     credentials_file = home / '.config/ais/credentials.sh'
     certificate_file = home / '.config/ais/zscaler-certificate'
     if certificate is not None:
@@ -137,39 +162,23 @@ def _install(workspace, home, source, environment, certificate, state):
         (home / '.bash_profile', profile_line + '\n' + bashrc_line, 'AIS_BASH_LOGIN'),
         (home / '.bashrc', ais_source('shell-env.sh'), 'AIS_ENV'),
     ]
-    destinations = [workspace / 'AGENTS.md', config, credentials_file]
-    destinations += [bin_dir / name for name in executable_names + ('baldur', 'odin', 'mimir', 'heimdall', 'aws-dev', 'aws-staging', 'aws-prod')]
+    destinations = [credentials_file]
+    destinations += [bin_dir / name for name in executable_names + ('aws-dev', 'aws-staging', 'aws-prod')]
     destinations += [home / '.config/ais' / name for name in environment_names]
     destinations += [path for path, _, _ in startup_files]
     if certificate is not None:
         destinations.append(certificate_file)
-    agent_paths = instruction_paths(home, environment)
-    destinations += list(agent_paths.values())
     for path in destinations:
         if path.is_dir():
             raise ValueError(f'Refusing to replace a directory: {path}')
     startup_updates = [(path, startup_lines(migrate_startup(path.name, path.read_text() if path.exists() else ''), lines, marker).encode()) for path, lines, marker in startup_files]
-    target = workspace / 'AGENTS.md'
-    previous_target = None
-    if config.is_file():
-        previous = config.read_text().rstrip('\n')
-        if previous.startswith('/') and '\n' not in previous and '\r' not in previous:
-            previous_target = Path(previous) / 'AGENTS.md'
 
-    # Plan updates before writing anything. Never mutate a personal symlink's target.
-    agent_updates = []
-    for path in agent_paths.values():
-        if path == target:
-            continue
-        existing_target = path.resolve() if path.is_symlink() else None
-        if not path.exists() or (path.is_symlink() and existing_target in (target, previous_target)):
-            agent_updates.append((path, None))
-        else:
-            content = path.read_text()
-            if not content.strip() or content == instructions:
-                agent_updates.append((path, None))
-            else:
-                agent_updates.append((path, reference_content(content, target).encode()))
+    # The shared installer owns the team files. Run it before anything personal is written, since the personal
+    # environment files and the Kind commands expect its workspace configuration.
+    release_shared_files(state, workspace, home, environment)
+    status = run_shared(workspace, source)
+    if status:
+        raise ValueError(f'The shared installer failed with status {status}; no personal files were changed')
 
     state.workspace = str(workspace)
     backups = []
@@ -186,8 +195,6 @@ def _install(workspace, home, source, environment, certificate, state):
         path.parent.mkdir(parents=True, exist_ok=True)
         state.change(path, {'type':'symlink','target':str(target)}, lambda: path.symlink_to(target), backups)
 
-    write(workspace / 'AGENTS.md', instructions.encode(), 0o644)
-    write(config, (str(workspace) + '\n').encode(), 0o600)
     for name in executable_names:
         write(bin_dir / name, (source / name).read_bytes(), 0o755)
     for name in environment_names:
@@ -202,21 +209,11 @@ def _install(workspace, home, source, environment, certificate, state):
         write(certificate_file, (str(certificate) + '\n').encode(), 0o600)
     for path, content in startup_updates:
         write(path, content, 0o600)
-    for name in ('baldur', 'odin', 'mimir', 'heimdall'):
-        path = bin_dir / name
-        if path.is_symlink() and os.readlink(path) == 'iip-kind':
-            continue
-        link(path, 'iip-kind')
     for name in ('aws-dev', 'aws-staging', 'aws-prod'):
         path = bin_dir / name
         if path.is_symlink() and os.readlink(path) == 'aws-session':
             continue
         link(path, 'aws-session')
-    for path, content in agent_updates:
-        if content is not None:
-            write(path, content, 0o644)
-        elif not path.is_symlink() or path.resolve() != target:
-            link(path, target)
     return workspace, backups
 
 
@@ -232,12 +229,18 @@ def main():
     try:
         if args.uninstall:
             selected = args.workspace.expanduser().resolve() if args.workspace is not None else None
+            workspace_for_state = selected or Path(Path.home().joinpath('.config/ais/workspace').read_text().rstrip('\n'))
+            InstallState = load_install_state(workspace_for_state)
             with InstallState(Path.home(), namespace='personal') as state:
                 actions = state.uninstall(selected, dry_run=args.dry_run)
             for action in actions:
                 print(action)
             if not actions:
                 print('No recorded personal installation; existing files left unchanged.')
+            if not args.dry_run:
+                status = run_shared(workspace_for_state, Path(__file__).resolve().parent, uninstall=True)
+                if status:
+                    return status
             print('Private credentials, certificate, and local installer sources are retained.')
             return 0
         configured = args.workspace
@@ -252,7 +255,8 @@ def main():
         parser.exit(1, f'Setup failed: {error}\n')
     print(f'Workspace: {workspace}')
     print(f'Configuration: {Path.home() / ".config/ais/workspace"}')
-    print('Installed workspace instructions, shared environment, ais-env, AWS/JWT helpers, and Kind commands.')
+    print('Installed through the shared installer: team instructions with personal rules, Kind commands and agent links.')
+    print('Installed personally: shared environment, ais-env, AWS/JWT helpers and shell startup.')
     print('Private credentials: ' + str(Path.home() / '.config/ais/credentials.sh'))
     for agent, path in instruction_paths(Path.home(), os.environ).items():
         method = 'shared symlink' if path.is_symlink() else 'personal instructions with managed read reference'

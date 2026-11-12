@@ -75,7 +75,12 @@ def collect(home, environment, timeout=5):
         installed = workspace / 'AGENTS.md'
         try:
             expected = shared.read_text().rstrip() + '\n\n' + personal.read_text().strip() + '\n'
-            matches = installed.read_text() == expected
+            text = installed.read_text()
+            if text.startswith('<!-- AIS_GENERATED'):
+                # The shared installer stamps a header with checksums; compare only the instructions after it.
+                end = text.find('-->\n')
+                text = text[end + len('-->\n'):].lstrip('\n') if end != -1 else text
+            matches = text == expected
             record('instructions', matches, 'Current shared template plus personal rules' if matches else
                    'Installed instructions differ from current sources; rerun the installer')
         except OSError:
