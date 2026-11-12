@@ -23,15 +23,14 @@ There is one set of installed agent instructions, combining shared and personal 
 
 1. Run the shared installer from `ais-greenshark`.
 2. It finds my personal installer at `~/.config/ais/local-setup/install.py` and hands the installation over to it.
-3. My installer reads the **current shared template** from the local `ais-greenshark` checkout and appends only the personal rules in [`AGENTS.local.md`](local-setup/AGENTS.local.md).
-4. It writes the combined instructions to `<workspace>/AGENTS.md` and connects the local agents to that file.
-5. It also installs my shell settings and helper commands.
+3. My installer runs the shared installer again with `--shared-only` and the personal rules in [`AGENTS.local.md`](local-setup/AGENTS.local.md). The shared installer then writes the combined instructions (the **current shared template** from the local `ais-greenshark` checkout plus my rules) to `<workspace>/AGENTS.md`, installs the `iip-kind` dispatcher and the `baldur`, `odin`, `mimir` and `heimdall` links, saves the workspace location and connects the local agents to that file.
+4. My installer then installs only what is personal: shell settings, helper commands, credentials and the certificate setting.
 
 Here, `<workspace>` means the folder containing the AIS repository checkouts. Its location is saved in `~/.config/ais/workspace`.
 
 **Shared rules are not copied into this repository.** Every install reads them from `<workspace>/ais-greenshark/tools/workspace-setup/AGENTS.template.md`. Update that checkout and rerun the installer to receive new team rules. Installation does not automatically download Git updates.
 
-The shared installer hands over before changing installed files. My installer manages the personal installation and its rollback records; it does not run a second shared installation over the same files.
+Each file has one owner. The shared installer owns the files it writes in step 3, so they always match the `ais-greenshark` checkout and `install.py --check` reports no drift. My installer owns the personal files and its own rollback records, and it reads the receipt module from the shared checkout instead of keeping a copy.
 
 ## Install on a machine
 
